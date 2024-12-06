@@ -7,6 +7,7 @@ from transformers import CLIPProcessor, CLIPModel
 import os
 from torcheval.metrics import BinaryAccuracy, BinaryF1Score, BinaryConfusionMatrix, BinaryAUROC
 from torch.utils.data import DataLoader, Dataset
+from tqdm import tqdm
 
 def clip_pred(imgs_class, class_type, model, processor):
 
@@ -18,7 +19,7 @@ def clip_pred(imgs_class, class_type, model, processor):
         padding=True
     )
 
-    inputs = {k: v.to("cpu") for k, v in inputs.items()}  # Move inputs to GPU
+    inputs = {k: v.to("cuda") for k, v in inputs.items()}  # Move inputs to GPU
     with torch.no_grad():  # Disable gradient calculation for inference
         outputs = model(**inputs)
         img_features = model.get_image_features(pixel_values=inputs['pixel_values'])
@@ -65,7 +66,7 @@ def evaluate_model(imgs_class):
     Evaluate the CLIP model using mini-batch processing and calculate metrics.
     """
     # Load the CLIP model and processor
-    model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to("cpu")
+    model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to("cuda")
     processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
     
     # Process images in mini-batches
@@ -111,8 +112,8 @@ def train_loop(train_loader, model, loss, optimizer, num_epochs):
     acc = BinaryAccuracy()
 
     for epoch in range(num_epochs):
-        for batch_features, batch_labels in train_loader:  
-            batch_features, batch_labels = batch_features.to("cpu"), batch_labels.to("cpu")
+        for batch_features, batch_labels in tqdm(train_loader, desc = "Training"):  
+            batch_features, batch_labels = batch_features.to("cuda"), batch_labels.to("cuda")
 
             batch_output = model(batch_features)
             batch_loss = loss(batch_output.squeeze(), batch_labels)
@@ -132,16 +133,22 @@ def test_network(test_loader, model, loss):
     test_loss = 0
     test_acc = 0
     acc = BinaryAccuracy()
+    auroc = BinaryAUROC()
+    cm = BinaryConfusionMatrix()
     with torch.no_grad():
-        for batch_features, batch_labels in test_loader:
-            batch_features, batch_labels = batch_features.to('cpu'), batch_labels.to('cpu')
+        for batch_features, batch_labels in tqdm(test_loader, desc = "Testing"):
+            batch_features, batch_labels = batch_features.to('cuda'), batch_labels.to('cuda')
 
             # Forward pass
             batch_outputs = model(batch_features).squeeze()
             batch_loss = loss(batch_outputs, batch_labels)
             test_loss += batch_loss
-            
+
+            batch_labels = batch_labels.to(torch.int64)
             acc.update(batch_outputs, batch_labels)
+            cm.update(batch_outputs, batch_labels)
+            auroc.update(batch_outputs, batch_labels)
+
             batch_accuracy = acc.compute()
             test_acc += batch_accuracy
             acc.reset()
@@ -149,8 +156,10 @@ def test_network(test_loader, model, loss):
 
     avg_loss = test_loss / len(test_loader)
     avg_acc =  test_acc / len(test_loader)
+    test_cm = cm.compute()
+    test_auroc = auroc.compute()
 
-    print(f'Average test loss: {avg_loss:.4f}, Average test accuracy: {avg_acc:.4f}')
+    print(f'Average test loss: {avg_loss:.4f}, Average test accuracy: {avg_acc:.4f}, Confusion Matrix: \n{test_cm}, AUROC: {test_auroc:.4f}')
 
 class dict_to_data(Dataset):
     def __init__(self, features, labels):
