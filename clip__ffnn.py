@@ -22,7 +22,7 @@ def clip_pred(imgs_class, class_type, model, processor):
     inputs = {k: v.to("cuda") for k, v in inputs.items()}  # Move inputs to GPU
     with torch.no_grad():  # Disable gradient calculation for inference
         outputs = model(**inputs)
-        img_features = model.get_image_features(pixel_values=inputs['pixel_values'])
+        img_features = model.get_image_features(pixel_values=inputs['pixel_values']).to("cpu")
     logits_per_image = outputs.logits_per_image  # Image-text similarity score
     prob = logits_per_image.softmax(dim=1)  # Probability over classes
     return prob[:,1], img_features
@@ -75,10 +75,10 @@ def evaluate_model(imgs_class):
     image_features = []
     for i in imgs_class:
         batch_probs, batch_features = clip_pred(imgs_class[i][0], i,  model, processor)
-        probs.extend(batch_probs)
+        probs.extend(batch_probs.cpu())
         labels.extend(imgs_class[i][1])
-        for f in batch_features:
-            image_features.append(f)
+        image_features.extend(f for f in batch_features).cpu()
+        torch.cuda.empty_cache()
     
     probs = torch.tensor(probs)
     labels = torch.tensor(labels, dtype=torch.int)
@@ -125,7 +125,6 @@ def train_loop(train_loader, model, loss, optimizer, num_epochs):
             acc.update(batch_output.squeeze(), batch_labels)
             batch_accuracy = acc.compute()
             acc.reset()
-            
         print(f"Epoch {epoch+1}, Loss: {batch_loss}, Accuracy: {batch_accuracy}")
     
 def test_network(test_loader, model, loss):
@@ -153,7 +152,6 @@ def test_network(test_loader, model, loss):
             test_acc += batch_accuracy
             acc.reset()
             print(f'Test Loss: {batch_loss:.4f}, Test Accuracy: {batch_accuracy:.4f}')
-
     avg_loss = test_loss / len(test_loader)
     avg_acc =  test_acc / len(test_loader)
     test_cm = cm.compute()
@@ -196,7 +194,7 @@ real_train = r"/dtu/blackhole/18/160664/train/REAL"
 
 imgs_class = load_images_from_folder(fake_train, real_train)
 # Evaluate the model
-feature_data_train = evaluate_model(imgs_class)
+feature_data_train = evaluate_model(imgs_class.to("cuda"))
 
 train_dataset = dict_to_data(feature_data_train['features'], feature_data_train['labels'])
 train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True, drop_last=True)
@@ -210,7 +208,7 @@ fake_test = r"/dtu/blackhole/18/160664/test/FAKE"
 real_test = r"/dtu/blackhole/18/160664/test/REAL"
 test_imgs_class = load_images_from_folder(fake_test, real_test)
 
-feature_data_test = evaluate_model(test_imgs_class)
+feature_data_test = evaluate_model(test_imgs_class.to("cuda"))
 test_dataset = dict_to_data(feature_data_test['features'], feature_data_test['labels'])
 test_loader = DataLoader(test_dataset, batch_size=64, shuffle=True, drop_last=True)
 test_network(test_loader ,ffnn, nn.BCELoss())
