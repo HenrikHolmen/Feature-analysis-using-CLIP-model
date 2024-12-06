@@ -213,5 +213,4 @@ test_imgs_class = load_images_from_folder(fake_test, real_test)
 feature_data_test = evaluate_model(test_imgs_class)
 test_dataset = dict_to_data(feature_data_test['features'], feature_data_test['labels'])
 test_loader = DataLoader(test_dataset, batch_size=64, shuffle=True, drop_last=True)
-test_network(test_loader ,ffnn, nn.BCELoss())
-
+test_network(test_loader, ffnn, nn.BCELoss())
