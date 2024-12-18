@@ -117,12 +117,12 @@ def train_loop(train_loader, model, loss, optimizer, num_epochs):
             batch_loss = loss(batch_output.squeeze(), batch_labels)
             batch_loss.backward()
             optimizer.step()
-
-            acc.update(batch_output.squeeze(), batch_labels)
+            
             acc.reset()
-            torch.cuda.empty_cache()
+            acc.update(batch_output.squeeze(), batch_labels)
+            
 
-        print(f"Epoch {epoch + 1}, Loss: {batch_loss.item():.4f}")
+        print(f"Epoch {epoch + 1}, Loss: {batch_loss.item():.4f}, Accuracy: {acc.compute():.4f}")
 
 def test_network(test_loader, model, loss):
     """
@@ -177,6 +177,8 @@ class network(nn.Module):
 # File paths
 fake_train = r"/dtu/blackhole/18/160664/train/FAKE"
 real_train = r"/dtu/blackhole/18/160664/train/REAL"
+fake_test = r"/dtu/blackhole/18/160664/test/FAKE"
+real_test = r"/dtu/blackhole/18/160664/test/REAL"
 
 # Load training data
 imgs_class = load_images_from_folder(fake_train, real_train)
@@ -188,3 +190,10 @@ train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True, drop_last=
 num_features = len(train_dataset.features[0])
 ffnn = network(num_features, 256).to("cuda")
 train_loop(train_loader, ffnn, nn.BCELoss(), optim.Adam(ffnn.parameters(), lr=1e-4), num_epochs=70)
+
+# Test network
+imgs_class = load_images_from_folder(fake_test, real_test)
+feature_data_test = evaluate_model(imgs_class)
+test_dataset = dict_to_data(feature_data_test['features'], feature_data_test['labels'])
+test_loader = DataLoader(test_dataset, batch_size=64, shuffle=True, drop_last=True)
+test_network(test_loader, ffnn, nn.BCELoss())
