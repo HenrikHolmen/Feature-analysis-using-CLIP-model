@@ -143,6 +143,7 @@ def test_network(test_loader, model, loss):
     with torch.no_grad():
         for batch_features, batch_labels in tqdm(test_loader, desc="Testing"):
             batch_features, batch_labels = batch_features.to("cuda"), batch_labels.to("cuda")
+            
             batch_outputs = model(batch_features).squeeze()
             batch_loss = loss(batch_outputs, batch_labels)
             test_loss += batch_loss.item()
